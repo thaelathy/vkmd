@@ -44,10 +44,10 @@ def main():
             name = re.sub(ur'&#(\d+);', lambda x: unichr(int(x.group(1))), name)
             for k in htmlsc:
                 name = re.sub(k[1], k[0], name)
-            if os.path.exists(uid+'/'+name + u'.mp3'): continue
+            if os.path.exists(uid+'/'+re.sub(r'''[\\|//<>"*|:?]+''','',name) + u'.mp3'): continue
             try: u = urllib2.urlopen(link, timeout=10)
             except: continue
-            f = open(uid+'/'+name + u'.mp3', 'w')
+            f = open(uid+'/' + re.sub(r'''[\\|//<>"*|:?]+''','',name) + u'.mp3', 'wb')
             f.write(u.read())
             u.close(); f.close()
             print link + ' saved'
