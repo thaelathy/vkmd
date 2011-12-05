@@ -24,7 +24,7 @@ class VkAgent:
         content = urllib2.urlopen(urllib2.Request(url,post)).read()
         return content
 
-def main():
+def main(email, passw, uid):
     htmlsc = (('&', '&amp;'), ('<', '&lt;'), ('>', '&gt;'), ('"', '&quot;'), ('', '/'))
     vk = VkAgent(email, passw)
     page = vk.request('http://vk.com/audio?id=%s' % uid)
@@ -61,4 +61,4 @@ if __name__ == '__main__':
     passw = param['-p'] #your password
     uid = param['-i'] #profile id
     
-    main()
+    main(email, passw, uid)
