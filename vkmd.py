@@ -1,64 +1,87 @@
 #-=-coding:utf-8-=-
-import urllib
-import urllib2
-import cookielib
 import re
 import os
 import sys
 import getopt
+import logging
+import time
+
+import requests
+from mutagen.mp3 import MP3
+from mutagen.id3 import ID3, TRCK, TIT2, TPE1, TALB, TDRC, TCON, COMM, ID3NoHeaderError
+
+logging.basicConfig(filename='vkmd.log', level=logging.DEBUG)
+logging.info('Started')
 
 class VkAgent:
-    def __init__(self, email, passw):
-        self.urlopener() #install cookie support
-        auth = {'act':'login', 'q':'1', 'al_frame':'1', 'captcha_sid':'', 'captcha_key':'', 'from_host':'vk.com', 
-            'vk':'1', 'email':email, 'pass':passw, 'expire':''}
-        self.request('https://login.vk.com/?act=login', auth)
-        
-    def urlopener(self):
-        cj = cookielib.CookieJar()
-        opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cj))
-        urllib2.install_opener(opener)
-        
-    def request(self, url, post=None):
-        if post: post = urllib.urlencode(post)
-        content = urllib2.urlopen(urllib2.Request(url,post)).read()
-        return content
+    def __init__(self, params):
+        logging.debug('Getting main page')
+        r = requests.get('http://m.vk.com/')
+        url = re.findall(r'action="(.*?)"', r.text)[0]
+        r = requests.post(url, params=params)
+        self.headers = r.request.headers
+        self.cookies = r.cookies
 
-def main(email, passw, uid):
-    htmlsc = (('&', '&amp;'), ('<', '&lt;'), ('>', '&gt;'), ('"', '&quot;'), ('', '/'))
-    vk = VkAgent(email, passw)
-    page = vk.request('http://vk.com/audio?id=%s' % uid)
-    tr = re.search(ur'<b id\=\"audio_summary\">(?P<au>(.+?))<\/b>', page, re.UNICODE|re.DOTALL|re.MULTILINE)
-    trc = re.search(ur"(\d+)",tr.group('au')).group(0) #count tracks
-    try: os.mkdir(uid) #directory to save to
-    except OSError: pass 
-    
-    for i in range(0,int(trc),50): #TODO (0
-        page = vk.request('http://vk.com/audio?id=%s&offset=%s' % (uid,i))
-        tracks = re.split(ur'<td class\=\"play_btn\">', page)
-        for j in tracks[1:-2]:
-            link = re.search(ur'<input type\=\"hidden\" id="audio_info[0-9]+_[0-9]+" value="(?P<link>(.+?)),[0-9]+" \/\>', j).group('link')
-            name = re.search(ur'<div class="title_wrap">(?P<name>(.+?))</div>', j, re.DOTALL|re.MULTILINE).group('name')
-            name = unicode(name, 'windows-1251')
-            name = re.sub(ur'<[^>]+>', ur'', name, re.UNICODE|re.DOTALL|re.MULTILINE)
-            name = re.sub(ur'&#(\d+);', lambda x: unichr(int(x.group(1))), name)
-            for k in htmlsc:
-                name = re.sub(k[1], k[0], name)
-            if os.path.exists(uid+'/'+re.sub(r'''[\\|//<>"*|:?]+''','',name) + u'.mp3'): continue
-            try: u = urllib2.urlopen(link, timeout=10)
-            except: continue
-            f = open(uid+'/' + re.sub(r'''[\\|//<>"*|:?]+''','',name) + u'.mp3', 'wb')
-            f.write(u.read())
-            u.close(); f.close()
-            print link + ' saved'
+    def get(self, url):
+        time.sleep(1)
+        r = requests.get(url, headers=self.headers, cookies=self.cookies)
+        return r.content
+        
+def main(email, passw, uid, folder=''):
+    vk = VkAgent(params={"email": email, "pass": passw})
+    try:
+        data = vk.get("http://m.vk.com/audios%s" % uid)
+        cnt = int(re.findall(r'<em class\="tab_counter">([0-9,]+)<\/em>', data)[0].replace(',', ''))
+        logging.debug(cnt)
+    except:
+        logging.error("Can't count audios")
+        exit()
+    try:
+        os.mkdir(folder)
+        logging.debug('Created dir %s' % folder)
+    except OSError:
+        logging.error("Can't create dir, writing to .")
+        pass
+    for page in range(0, cnt, 50):
+        logging.info(u"Offset %s" % page)
+        data = vk.get("http://m.vk.com/audios%s?offset=%s" % (uid, page))
+        data_list = data.split('<div class="ai_label">')[1:]
+        for d in data_list:
+            artist = re.findall(r'"ai_artist">(.*?)<\/span>', d)[0]
+            title = re.findall(r'"ai_title">(.*?)<\/span>', d)[0]
+            link = re.findall(r'<input type="hidden" value="(.*?)"', d)[0]
+            
+            fname = "%s - %s" % (artist, title)
+            fname = fname.replace("/", " ").replace('&quot;', '"').replace('&gt;','>').replace('&lt;','<').replace('&amp;','&')[:200] + ".mp3"
+            logging.info(u"Saving file")
+            if not os.path.isfile(fname):
+                f = open(folder + '/' + fname, 'wb')
+                content = vk.get(link)
+                f.write(content)
+                f.close()
+                logging.debug(u'Saved')
+                logging.debug(u'Handling tags')
+                try:
+                    audio = MP3(folder + '/' + fname)
+                    audio['TIT2'] = TIT2(encoding=3, text=[audio['TIT2'] if audio.get('TIT2') else title])
+                    audio['TPE1'] = TPE1(encoding=3, text=[audio['TPE1'] if audio.get('TPE1') else artist])
+                    audio['TRCK'] = TRCK(encoding=3, text=[audio['TRCK'] if audio.get('TRCK') else ''])
+                    audio['TALB'] = TALB(encoding=3, text=[audio['TALB'] if audio.get('TALB') else ''])
+                    audio.save()
+                except Exception, e:
+                    raise e
+                    audio = ID3(folder + '/' + fname)
+                    audio.add(TIT2(encoding=3, text=[audio['TIT2'] if audio.get('TIT2') else title]))
+                    audio.add(TPE1(encoding=3, text=[audio['TPE1'] if audio.get('TPE1') else artist]))
+                    audio.add(TRCK(encoding=3, text=[audio['TRCK'] if audio.get('TRCK') else '']))
+                    audio.add(TALB(encoding=3, text=[audio['TALB'] if audio.get('TALB') else '']))
+                    audio.save()
+                logging.debug(u'Finished writing tags') 
+                
+
             
 
 if __name__ == '__main__':
-    opts, args = getopt.getopt(sys.argv[1:], "u:p:i:", ["help", "output="])
-    param = {}
-    for i in opts: param[i[0]] = i[1]
-    email = param['-u'] #your mail
-    passw = param['-p'] #your password
-    uid = param['-i'] #profile id
-    
-    main(email, passw, uid)
+    opts, args = getopt.getopt(sys.argv[1:], "u:p:i:f:", ["help", "output="])
+    param = dict(opts)
+    main(param['-u'], param['-p'], param['-i'], param['-f'])
