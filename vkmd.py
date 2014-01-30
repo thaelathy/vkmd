@@ -69,13 +69,15 @@ def main(email, passw, uid, folder=''):
                     audio['TALB'] = TALB(encoding=3, text=[audio['TALB'] if audio.get('TALB') else ''])
                     audio.save()
                 except Exception, e:
-                    raise e
-                    audio = ID3(folder + '/' + fname)
-                    audio.add(TIT2(encoding=3, text=[audio['TIT2'] if audio.get('TIT2') else title]))
-                    audio.add(TPE1(encoding=3, text=[audio['TPE1'] if audio.get('TPE1') else artist]))
-                    audio.add(TRCK(encoding=3, text=[audio['TRCK'] if audio.get('TRCK') else '']))
-                    audio.add(TALB(encoding=3, text=[audio['TALB'] if audio.get('TALB') else '']))
-                    audio.save()
+                    try:
+                        audio = ID3(folder + '/' + fname)
+                        audio.add(TIT2(encoding=3, text=[audio['TIT2'] if audio.get('TIT2') else title]))
+                        audio.add(TPE1(encoding=3, text=[audio['TPE1'] if audio.get('TPE1') else artist]))
+                        audio.add(TRCK(encoding=3, text=[audio['TRCK'] if audio.get('TRCK') else '']))
+                        audio.add(TALB(encoding=3, text=[audio['TALB'] if audio.get('TALB') else '']))
+                        audio.save()
+                    except:
+                        logging.error(u'Failed to write ID3 tags')
                 logging.debug(u'Finished writing tags') 
                 
 
