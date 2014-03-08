@@ -55,8 +55,19 @@ def main(email, passw, uid, folder=''):
             fname = fname.replace("/", " ").replace('&quot;', '"').replace('&gt;','>').replace('&lt;','<').replace('&amp;','&')[:200] + ".mp3"
             logging.info(u"Saving file")
             if not os.path.isfile(fname):
+                get = True
+                cnt = 0
+                while get:
+                    try:
+                        content = vk.get(link)
+                        get = False
+                    except:
+                        cnt += 1
+                        if cnt > 9:
+                            get = False
+                            break
+                        time.sleep(5)
                 f = open(folder + '/' + fname, 'wb')
-                content = vk.get(link)
                 f.write(content)
                 f.close()
                 logging.debug(u'Saved')
